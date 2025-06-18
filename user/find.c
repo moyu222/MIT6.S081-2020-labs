@@ -56,7 +56,7 @@ find(char *path, char *name)
             }
             break;
         case T_DIR:
-            if((strcmp(de.name, "." != 0) && (strcmp(de.name, "..") != 0))){
+            if((strcmp(de.name, ".") != 0) && (strcmp(de.name, "..") != 0)){
                 find(buf, name);
             }
         }

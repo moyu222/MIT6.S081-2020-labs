@@ -10,6 +10,7 @@ child(int* pl)
     // pl 为上一个的右端口，就是当前的左端口
     // 尝试从左端口读取
     int n;
+    close(pl[WRITEEND]); // 注意关闭
     int read_num = read(pl[READEND], &n, sizeof(int));
     if(read_num == 0) {
         // 递归终止
@@ -24,7 +25,7 @@ child(int* pl)
     } else {
         close(pr[READEND]);
         int prime = n;
-        printf("prime %d", prime);
+        printf("prime %d\n", prime);
         while(read(pl[READEND], &n, sizeof(int)) != 0) {
             if(n%prime != 0) {
                 write(pr[WRITEEND], &n, sizeof(int));
@@ -48,8 +49,8 @@ main(int argc, char *argv[])
         for(int i = 2; i <= 35; i++) {
             write(p[WRITEEND], &i, sizeof(int)); // 直接写入4bytes的int型
         }
-        close(p[READEND]);
+        close(p[WRITEEND]); 
         wait((int *) 0);
-        exit(0);
     }
+    exit(0);
 }
