@@ -32,6 +32,7 @@ child(int* pl)
             }
         }
         close(pr[WRITEEND]);
+        close(pr[READEND]);
         wait((int *) 0); // same as main
         exit(0);
     }
