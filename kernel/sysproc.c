@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,39 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// trace syscall
+uint64
+sys_trace(void)
+{
+  int mask;
+  // 获得第一个参数即为 mask，用法参照上文
+  if(argint(0, &mask) < 0)
+    return -1;
+  // 创建新的进程属性 tracenum，并赋值
+  myproc()->tracenum = mask;
+  return 0;
+}
+
+// sysinfo, fill out the fields of struct sysinfo
+uint64
+sys_sysinfo(void)
+{
+  struct sysinfo info;
+  uint64 p;
+  // 用于返回的指针由 user 在参数中提供
+  if(argaddr(0, &p) < 0)
+    return -1;
+
+  // 分别在kallo.c pro.c 中实现这两个函数
+  info.freemem = kfreemem_amt();
+  info.nproc = getnpro_active();
+
+  // 接下来在 user mode 和 kernel mode 之间将kernel中的结构体复制到user
+  // 使用 copyout，参照 kernel/sysfile.c kernel/file.c
+  if(copyout(myproc()->pagetable, p,(char*)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
+
 }

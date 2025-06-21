@@ -80,3 +80,28 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// collect the amount of free memory
+// 参照上面的 kalloc 函数
+uint64
+kfreemem_amt(void)
+{
+  struct run *r;
+  
+  // 貌似不需要锁，先加上
+  // acquire(&kmem.lock);
+  r = kmem.freelist;
+  uint64 pages = 0;
+
+  // if(r){
+  //   pages++;
+  //   r = r->next;
+  // }
+  // 这里应该是个循环，搞错了
+  while(r){
+    pages++;
+    r = r->next;
+  }
+  // release(&kmem.lock);
+  return pages*PGSIZE;
+}

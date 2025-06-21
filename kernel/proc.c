@@ -85,6 +85,25 @@ allocpid() {
   return pid;
 }
 
+// collect the number of processes whose state is not UNUSED
+// 通过查看 allocproc 受到启发 receive inspiration
+uint64
+getnpro_active(void)
+{
+  struct proc *p;
+  uint64 count = 0;
+
+  // 这里看出进程表就是一个列表，和课上讲的一样，在执行一段时间后释放锁，返回到列表最后面？（还没看到，猜测一下）
+  for(p = proc; p < &proc[NPROC]; p++) {
+    // acquire(&p->lock); // 我感觉我们只是计数可能不需要锁？先加上
+    if(p->state != UNUSED){
+      count++;
+    }
+  }
+  return count;
+}
+
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -126,6 +145,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  // initialize the tracenum
+  p->tracenum = 0;
 
   return p;
 }
@@ -290,6 +312,9 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // copy the tracenum to child
+  np->tracenum = p->tracenum;
 
   pid = np->pid;
 
