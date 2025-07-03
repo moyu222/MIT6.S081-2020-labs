@@ -305,13 +305,13 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// 修改复制pagetable 并清除 PTE_W
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,18 +320,24 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    // 设置 cow flag，对于可写page
+    if(flags & PTE_W){
+      flags = (flags | PTE_COW) & ~PTE_W;
+      *pte = *pte | flags;
+    }
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      // kfree(mem);
       goto err;
     }
+    kaddrefcnt((char *) pa);
   }
   return 0;
 
  err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
+ // 不能free 物理页
+  uvmunmap(new, 0, i / PGSIZE, 0);
   return -1;
 }
 
@@ -359,6 +365,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+
+    if(cowpage(pagetable, va0) == 0) {
+      pa0 = cowalloc(pagetable, va0);
+    }
+
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -438,5 +449,58 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+// 判断是否为 cow page
+int cowpage(pagetable_t pagetable, uint64 va) {
+  if(va >= MAXVA)
+    return -1;
+  pte_t* pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+  if((*pte & PTE_V) == 0)
+    return -1;
+  return (*pte & PTE_COW ? 0 : -1);
+}
+
+// 为 cow page 进行 copy on write
+// va 必须对齐，返回新的物理地址
+uint64 cowalloc(pagetable_t pagetable, uint64 va) {
+  if (va % PGSIZE != 0)
+    return 0;
+  
+  uint64 pa = walkaddr(pagetable, va);
+  if (pa == 0)
+    return 0;
+
+  pte_t *pte = walk(pagetable, va, 0);
+  // 如果只有只有一个对地址的引用，直接修改 flag
+  if (krefcnt((char *) pa) == 1) {
+    *pte |= PTE_W;
+    *pte &= ~PTE_COW;
+    return pa;
+  } else {
+    // 分配新页，复制旧的
+    char *mem = kalloc();
+    if (mem == 0)
+      return 0;
+    
+    // 复制
+    memmove(mem, (char *)pa, PGSIZE);
+    
+    // 清除旧 pte 的 PTE_V
+    *pte &= ~PTE_V;
+
+    int flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+    if (mappages(pagetable, va, PGSIZE, (uint64)mem, flags) != 0) {
+      kfree(mem);
+      *pte |= PTE_V;
+      return 0;
+    }
+
+    // 将原来的物理内存引用减 1
+    kfree((char*) PGROUNDDOWN(pa));
+    return (uint64)mem;
   }
 }
