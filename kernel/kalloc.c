@@ -64,12 +64,13 @@ kfree(void *pa)
 
   // 只有引用为 0 回收
   acquire(&ref.lock);
-  if (--ref.cnt[(uint64) pa / PGSIZE] == 0) {
+  if(--ref.cnt[(uint64) pa / PGSIZE] == 0) {
     release(&ref.lock);
-    // Fill with junk to catch dangling refs.
-    memset(pa, 1, PGSIZE);
 
     r = (struct run*)pa;
+
+    // Fill with junk to catch dangling refs.
+    memset(pa, 1, PGSIZE);
 
     acquire(&kmem.lock);
     r->next = kmem.freelist;
@@ -93,7 +94,7 @@ kalloc(void)
   if(r) {
     kmem.freelist = r->next;
     acquire(&ref.lock);
-    ref.cnt[(uint64) r / PGSIZE] = 1;
+    ref.cnt[(uint64)r / PGSIZE] = 1;  // 将引用计数初始化为1
     release(&ref.lock);
   }
   release(&kmem.lock);
@@ -104,13 +105,13 @@ kalloc(void)
 }
 
 // 返回地址的引用数
-int krefcnt(void *pa) {
-  return ref.cnt[(uint64) pa / PGSIZE];
+int krefcnt(void* pa) {
+  return ref.cnt[(uint64)pa / PGSIZE];
 }
 
 // 增加引用计数，0成功
-int kaddrefcnt(void *pa) {
-  if(((uint64)pa % PGSIZE != 0) || (char *)pa < end || (uint64)pa >= PHYSTOP)
+int kaddrefcnt(void* pa) {
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     return -1;
   acquire(&ref.lock);
   ++ref.cnt[(uint64)pa / PGSIZE];

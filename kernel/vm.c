@@ -324,7 +324,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // 设置 cow flag，对于可写page
     if(flags & PTE_W){
       flags = (flags | PTE_COW) & ~PTE_W;
-      *pte = *pte | flags;
+      *pte = PA2PTE(pa) | flags;
     }
 
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
