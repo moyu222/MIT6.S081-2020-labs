@@ -21,12 +21,16 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  // kinit 和 freerange 是在 main.c 只有 cpu0 上运行
+  // 所以不能使用 cpuid，因此最开始freemem 都在 cpu0 上，需要窃取cpu0上的 run
+  for (int i = 0; i < NCPU; i++) {
+    initlock(&kmem[i].lock, "kmem");
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -56,10 +60,14 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  push_off();
+  int id = cpuid();
+  pop_off();
+
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +78,32 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();
+  int id = cpuid();
+  pop_off();
+
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
+
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem[id].freelist = r->next;
+  release(&kmem[id].lock);
+
+  if (!r) {
+    // 寻找其他 cpu 可用的 mem
+    for (int i = 0; i < NCPU; i++) {
+      if (i == id) continue;
+      acquire(&kmem[i].lock);
+      r = kmem[i].freelist;
+      if (r) {          
+        kmem[i].freelist = r->next;
+        release(&kmem[i].lock);
+        break; // 后面还需要填充不能直接return
+      }
+      release(&kmem[i].lock);
+      
+    }
+  }
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
